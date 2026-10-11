@@ -27,9 +27,9 @@ function makeServer(){
  server.registerResource("Kotoba reader","ui://kotoba/reader.html",{},async()=>({contents:[{uri:"ui://kotoba/reader.html",mimeType:"text/html",text:template,_meta:{"openai/widgetDescription":"Minimal Japanese reader with clickable expressions."}}]}));
  server.registerTool("open_kotoba",{
  description:"Display a natural Japanese reply as an interactive reader. IMPORTANT: Generate the Japanese reply yourself based on the user's conversation, then segment the ENTIRE reply into ordered tokens. Supply a Japanese reading and concise English meaning for EVERY token including particles and inflections (punctuation can be combined with neighboring tokens). Do not repeat the Japanese reply outside the widget. Use conversational, adult Japanese, not textbook lessons.",
- inputSchema:{tokens:z.array(z.object({text:z.string(),reading:z.string().optional(),meaning:z.string().optional()})).min(1).max(150).describe("Complete Japanese response, segmented into tappable expressions, in reading order."),topic:z.string().optional()},
+ inputSchema:{tokens:z.array(z.object({text:z.string(),reading:z.string().optional(),meaning:z.string().optional()})).min(1).max(150).optional().describe("Optional complete Japanese response, segmented into tappable expressions, in reading order."),topic:z.string().optional()},
  _meta:{"openai/outputTemplate":"ui://kotoba/reader.html","openai/toolInvocation/invoking":"Writing in Japanese","openai/toolInvocation/invoked":"Kotoba"},
- },async({tokens,topic})=>({content:[{type:"text",text:"Japanese reply rendered in the Kotoba widget. Do not repeat its text in your response."}],structuredContent:{tokens,topic:topic||""}}));
+ },async({tokens,topic})=>({content:[{type:"text",text:"Kotoba reader opened. If no tokens were supplied, a sample is shown."}],structuredContent:{tokens:tokens?.length?tokens:sample,topic:topic||""}}));
  return server;
 }
 app.get("/",(_req,res)=>res.type("html").send(template));

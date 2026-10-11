@@ -4,33 +4,37 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({limit:"1mb"}));
 const PORT = process.env.PORT || 3000;
-
-const conversations = [
-  [{text:"昨日",reading:"きのう",meaning:"yesterday"},{text:"、"},{text:"帰り道",reading:"かえりみち",meaning:"way home"},{text:"で"},{text:"猫",reading:"ねこ",meaning:"cat"},{text:"を"},{text:"見かけた",reading:"みかけた",meaning:"happened to see"},{text:"んだけど、"},{text:"めっちゃ",reading:"めっちゃ",meaning:"really / super"},{text:"堂々としてた",reading:"どうどうとしてた",meaning:"looked very confident"},{text:"。"}],
-  [{text:"ところで",reading:"ところで",meaning:"by the way"},{text:"、"},{text:"最近",reading:"さいきん",meaning:"recently"},{text:"何か",reading:"なにか",meaning:"anything"},{text:"面白い",reading:"おもしろい",meaning:"interesting"},{text:"ことあった？"}]
+const sample = [
+ {text:"最近",reading:"さいきん",meaning:"lately"},
+ {text:"、"}, {text:"何か",reading:"なにか",meaning:"anything"},
+ {text:"面白い",reading:"おもしろい",meaning:"interesting"},
+ {text:"ことあった？",reading:"ことあった",meaning:"has anything happened?"}
 ];
-const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function readerHtml(sentences) {
- const parts = sentences.map(line=>'<p>'+line.map(t=>t.meaning ? '<button class="word" data-reading="'+escapeHtml(t.reading)+'" data-meaning="'+escapeHtml(t.meaning)+'">'+escapeHtml(t.text)+'</button>' : escapeHtml(t.text)).join('')+'</p>').join('');
- return `<!doctype html><html lang="ja"><meta name="viewport" content="width=device-width, initial-scale=1"><style>
- :root{color-scheme:light dark}body{font-family:system-ui,"Noto Sans JP",sans-serif;margin:0;padding:24px;background:#f8f5ef;color:#282522}
- .reader{max-width:640px;margin:auto}.word{border:0;border-bottom:1px dotted #b89a72;background:transparent;color:inherit;font:inherit;padding:2px;cursor:pointer}
- p{font-size:22px;line-height:2.2}.detail{position:sticky;bottom:12px;padding:16px;background:#fff;border:1px solid #e4d9ca;border-radius:16px;box-shadow:0 4px 24px #0001;min-height:55px}
- small{color:#766c60}h2{font-size:18px;font-weight:500}button:focus-visible{outline:2px solid #99734c}
- </style><div class="reader"><small>KOTOBA · Japanese immersion</small><h2>今日の会話</h2>${parts}<div class="detail" id="detail">Tap a Japanese expression to see its reading and meaning.</div></div>
- <script>document.querySelectorAll('.word').forEach(b=>b.addEventListener('click',()=>{document.querySelector('#detail').textContent=b.textContent+' · '+b.dataset.reading+' · '+b.dataset.meaning;}));</script></html>`;
-}
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const template = `<!doctype html><html lang="ja"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;padding:8px 4px;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;background:transparent;color:var(--app-text,#222)}.wrap{max-width:100%;margin:auto}.passage{font-size:17px;line-height:2.1;overflow-wrap:anywhere;white-space:pre-wrap}.token{border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;line-height:inherit;padding:0 1px;cursor:pointer}.token:active,.token:focus-visible{background:rgba(120,120,120,.13);outline:none}.gloss{margin-top:12px;padding:11px 13px;border:1px solid rgba(128,128,128,.25);border-radius:12px;font-size:14px;display:none}.gloss strong{font-weight:600}.muted{opacity:.65;font-size:12px}.hint{font-size:12px;opacity:.6;margin-top:8px}.gloss.show{display:block}@media(prefers-color-scheme:dark){body{color:#e9e9e9}}
+</style></head><body><div class="wrap"><div id="passage" class="passage" aria-label="Japanese conversation"></div><div class="gloss" id="gloss" aria-live="polite"></div><div class="hint" id="hint">Tap any expression for its meaning</div></div><script>
+const fallback=${JSON.stringify(sample)};
+const root=document.getElementById('passage'),gloss=document.getElementById('gloss');
+function render(data){const tokens=Array.isArray(data?.tokens)&&data.tokens.length?data.tokens:fallback;root.replaceChildren();for(const t of tokens){const s=String(t.text??'');if(!s)continue;const b=document.createElement('button');b.type='button';b.className='token';b.textContent=s;b.addEventListener('click',()=>{gloss.classList.add('show');gloss.replaceChildren();const title=document.createElement('strong');title.textContent=s;gloss.append(title);const reading=document.createElement('div');reading.className='muted';reading.textContent=t.reading||'Reading not provided';gloss.append(reading);const meaning=document.createElement('div');meaning.textContent=t.meaning||'No gloss supplied';gloss.append(meaning);});root.append(b);}document.getElementById('hint').textContent='Tap an expression for its meaning';}
+render(window.openai?.toolOutput);
+window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.toolOutput)render(e.detail.globals.toolOutput)});
+</script></body></html>`;
 function makeServer(){
- const server=new McpServer({name:"kotoba",version:"0.1.0"});
- server.registerResource("Japanese reading interface","ui://kotoba/reader.html",{},async()=>({contents:[{uri:"ui://kotoba/reader.html",mimeType:"text/html",text:readerHtml(conversations),_meta:{"openai/widgetDescription":"Tap Japanese words to reveal readings and English meanings."}}]}));
- server.registerTool("open_kotoba",{description:"Open a natural Japanese reading panel with tappable words and English glosses.",inputSchema:{topic:z.string().optional()},_meta:{"openai/outputTemplate":"ui://kotoba/reader.html","openai/toolInvocation/invoking":"Opening Kotoba","openai/toolInvocation/invoked":"Kotoba is ready"}},async({topic})=>({content:[{type:"text",text:"Kotoba reading panel ready. The panel currently contains a fixed sample; topic selection and AI-generated text are planned for the next iteration."}],structuredContent:{topic:topic||"daily life"}}));
+ const server=new McpServer({name:"kotoba",version:"0.2.0"});
+ server.registerResource("Kotoba reader","ui://kotoba/reader.html",{},async()=>({contents:[{uri:"ui://kotoba/reader.html",mimeType:"text/html",text:template,_meta:{"openai/widgetDescription":"Minimal Japanese reader with clickable expressions."}}]}));
+ server.registerTool("open_kotoba",{
+ description:"Display a natural Japanese reply as an interactive reader. IMPORTANT: Generate the Japanese reply yourself based on the user's conversation, then segment the ENTIRE reply into ordered tokens. Supply a Japanese reading and concise English meaning for EVERY token including particles and inflections (punctuation can be combined with neighboring tokens). Do not repeat the Japanese reply outside the widget. Use conversational, adult Japanese, not textbook lessons.",
+ inputSchema:{tokens:z.array(z.object({text:z.string(),reading:z.string().optional(),meaning:z.string().optional()})).min(1).max(150).describe("Complete Japanese response, segmented into tappable expressions, in reading order."),topic:z.string().optional()},
+ _meta:{"openai/outputTemplate":"ui://kotoba/reader.html","openai/toolInvocation/invoking":"Writing in Japanese","openai/toolInvocation/invoked":"Kotoba"},
+ },async({tokens,topic})=>({content:[{type:"text",text:"Japanese reply rendered in the Kotoba widget. Do not repeat its text in your response."}],structuredContent:{tokens,topic:topic||""}}));
  return server;
 }
-app.get("/",(_req,res)=>res.type("html").send(readerHtml(conversations)));
-app.get("/health",(_req,res)=>res.json({ok:true,app:"kotoba"}));
-app.post("/mcp",async(req,res)=>{const server=makeServer();const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined});res.on("close",()=>{transport.close();server.close()});await server.connect(transport);await transport.handleRequest(req,res,req.body)});
+app.get("/",(_req,res)=>res.type("html").send(template));
+app.get("/health",(_req,res)=>res.json({ok:true,app:"kotoba",version:"0.2.0"}));
+app.post("/mcp",async(req,res)=>{const server=makeServer();const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined});res.on("close",()=>{transport.close();server.close()});try{await server.connect(transport);await transport.handleRequest(req,res,req.body)}catch(e){console.error(e);if(!res.headersSent)res.status(500).json({error:"MCP request failed"})}});
 app.get("/mcp",(_req,res)=>res.status(405).send("Method Not Allowed"));
 app.delete("/mcp",(_req,res)=>res.status(405).send("Method Not Allowed"));
 app.listen(PORT,"0.0.0.0",()=>console.log("Kotoba listening on "+PORT));

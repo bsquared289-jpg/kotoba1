@@ -149,7 +149,20 @@ def fetch(hall, meal, date, include_raw=False):
             return result
         except Exception as e:
             errors.append(f"{url}: {type(e).__name__}: {str(e)[:200]}")
-    raise RuntimeError("; ".join(errors))
+    return {
+        "hall": HALLS[hall],
+        "hall_id": hall,
+        "meal": meal,
+        "date": date,
+        "source_url": None,
+        "stations": [],
+        "items": [],
+        "item_count": 0,
+        "holiday_notes": [],
+        "message": "No published Nutrislice menu was available for this hall, meal, and date.",
+        "raw_day": None if include_raw else "omitted; call with include_raw=true to inspect raw Nutrislice fields",
+        "fetch_errors": errors if include_raw else "omitted; call with include_raw=true to inspect fetch errors",
+    }
 
 
 TOOLS = [
@@ -269,6 +282,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         return self.reply(404, {"error": "Not found"})
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def reply(self, status, obj):
         body = json.dumps(obj).encode()

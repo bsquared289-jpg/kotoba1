@@ -35,6 +35,8 @@ def menu_urls(hall, meal, date):
     dt = datetime.date.fromisoformat(date)
     y, m, d = dt.year, dt.month, dt.day
     return [
+        f"https://colbydining.api.nutrislice.com/menu/api/weeks/school/{hall}/menu-type/{meal}/{y}/{m}/{d}/?format=json",
+        f"https://colbydining.nutrislice.com/menu/api/weeks/school/{hall}/menu-type/{meal}/{y}/{m}/{d}/?format=json",
         f"https://colby.api.nutrislice.com/menu/api/weeks/school/{hall}/menu-type/{meal}/{y}/{m}/{d}/?format=json",
         f"https://colby.nutrislice.com/menu/api/weeks/school/{hall}/menu-type/{meal}/{y}/{m}/{d}/?format=json",
     ]
@@ -71,7 +73,6 @@ def compact_item(item, station):
         "dietary": [icon["name"] for icon in icons if icon.get("is_dietary")],
         "allergens": [icon["name"] for icon in icons if icon.get("is_allergen")],
         "ingredients": food.get("ingredients") or food.get("synced_ingredients") or "",
-        "raw": item,
     }
 
 
@@ -104,7 +105,7 @@ def summarize_day(day):
     return {"items": items, "stations": stations, "holiday_notes": holiday_notes}
 
 
-def fetch(hall, meal, date):
+def fetch(hall, meal, date, include_raw=False):
     if hall not in HALLS or meal not in MEALS:
         raise ValueError("Invalid hall or meal")
     datetime.date.fromisoformat(date)
@@ -125,13 +126,13 @@ def fetch(hall, meal, date):
                     "items": [],
                     "stations": [],
                     "message": "Requested date was not present in the Nutrislice week payload.",
-                    "raw_day": None,
+                    "raw_day": None if include_raw else "omitted; call with include_raw=true to inspect raw Nutrislice fields",
                 }
             summary = summarize_day(day)
             message = None
             if not summary["items"] and summary["holiday_notes"]:
                 message = "; ".join(summary["holiday_notes"])
-            return {
+            result = {
                 "hall": HALLS[hall],
                 "hall_id": hall,
                 "meal": meal,
@@ -143,8 +144,9 @@ def fetch(hall, meal, date):
                 "item_count": len(summary["items"]),
                 "holiday_notes": summary["holiday_notes"],
                 "message": message,
-                "raw_day": day,
+                "raw_day": day if include_raw else "omitted; call with include_raw=true to inspect raw Nutrislice fields",
             }
+            return result
         except Exception as e:
             errors.append(f"{url}: {type(e).__name__}: {str(e)[:200]}")
     raise RuntimeError("; ".join(errors))
@@ -160,6 +162,11 @@ TOOLS = [
                 "hall": {"type": "string", "enum": list(HALLS)},
                 "meal": {"type": "string", "enum": sorted(MEALS)},
                 "date": {"type": "string", "description": "YYYY-MM-DD"},
+                "include_raw": {
+                    "type": "boolean",
+                    "description": "Set true only when raw Nutrislice day fields are needed for debugging or detailed nutrition/allergen inspection. Defaults to false.",
+                    "default": False,
+                },
             },
             "required": ["hall", "meal", "date"],
         },
@@ -198,7 +205,12 @@ def mcp_result(req):
             if params.get("name") == "get_colby_locations":
                 data = {"locations": HALLS, "meals": sorted(MEALS)}
             elif params.get("name") == "get_colby_menu":
-                data = fetch(args.get("hall", ""), args.get("meal", ""), args.get("date", ""))
+                data = fetch(
+                    args.get("hall", ""),
+                    args.get("meal", ""),
+                    args.get("date", ""),
+                    bool(args.get("include_raw", False)),
+                )
             else:
                 raise ValueError("Unknown tool")
             result = {"content": [{"type": "text", "text": json.dumps(data)}], "structuredContent": data}
@@ -243,7 +255,8 @@ class Handler(BaseHTTPRequestHandler):
             meal = query.get("meal", ["lunch"])[0]
             date = query.get("date", ["2026-10-12"])[0]
             try:
-                return self.reply(200, fetch(hall, meal, date))
+                include_raw = query.get("include_raw", ["false"])[0].lower() in {"1", "true", "yes"}
+                return self.reply(200, fetch(hall, meal, date, include_raw))
             except Exception as e:
                 return self.reply(502, {"error": str(e)})
         if path in {"/", "/index.html"}:

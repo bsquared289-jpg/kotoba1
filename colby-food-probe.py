@@ -42,6 +42,7 @@ class Handler(BaseHTTPRequestHandler):
    if n>200000:raise ValueError('Request too large')
    request=json.loads(self.rfile.read(n));result=mcp_result(request)
    if result is None:self.send_response(202);self.end_headers();return
+   print('MCP_CALL',request.get('method'),flush=True)
    self.reply(200,result)
   except Exception as e:self.reply(400,{'error':str(e)})
 
@@ -49,6 +50,8 @@ class Handler(BaseHTTPRequestHandler):
   body=json.dumps(obj).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def do_GET(self):
   p=urlparse(self.path)
+  if p.path=='/mcp':
+   self.send_response(405);self.send_header('Allow','POST');self.send_header('Content-Length','0');self.end_headers();return
   if p.path=='/health':return self.reply(200,{'ok':True})
   if p.path=='/api/menu':
    q=parse_qs(p.query);hall=q.get('hall',['roberts-dining-hall'])[0];meal=q.get('meal',['dinner'])[0];date=q.get('date',['2026-10-12'])[0]

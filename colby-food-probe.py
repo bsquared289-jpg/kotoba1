@@ -15,7 +15,36 @@ def fetch(hall,meal,date):
    return {'source_url':url,'keys':list(data.keys()),'days':data.get('days',[])}
   except Exception as e: errors.append(type(e).__name__+': '+str(e)[:150])
  raise RuntimeError('; '.join(errors))
+
+TOOLS=[{'name':'get_colby_menu','description':'Fetch live Colby College dining menu with detailed raw Nutrislice fields, including stations, dietary tags, allergens and nutrition if present.','inputSchema':{'type':'object','properties':{'hall':{'type':'string','enum':list(HALLS)},'meal':{'type':'string','enum':sorted(MEALS)},'date':{'type':'string','description':'YYYY-MM-DD'}},'required':['hall','meal','date']}},{'name':'get_colby_locations','description':'List available Colby dining locations.','inputSchema':{'type':'object','properties':{}}}]
+def mcp_result(req):
+ method=req.get('method');ident=req.get('id')
+ if method=='notifications/initialized':return None
+ if method=='initialize':return {'jsonrpc':'2.0','id':ident,'result':{'protocolVersion':'2025-03-26','capabilities':{'tools':{'listChanged':False}},'serverInfo':{'name':'colby-dining','version':'0.1.0'}}}
+ if method=='ping':return {'jsonrpc':'2.0','id':ident,'result':{}}
+ if method=='tools/list':return {'jsonrpc':'2.0','id':ident,'result':{'tools':TOOLS}}
+ if method=='tools/call':
+  p=req.get('params') or {};a=p.get('arguments') or {}
+  try:
+   if p.get('name')=='get_colby_locations':data={'locations':HALLS,'meals':sorted(MEALS)}
+   elif p.get('name')=='get_colby_menu':data=fetch(a.get('hall',''),a.get('meal',''),a.get('date',''))
+   else:raise ValueError('Unknown tool')
+   result={'content':[{'type':'text','text':json.dumps(data)}]}
+  except Exception as e:result={'isError':True,'content':[{'type':'text','text':str(e)}]}
+  return {'jsonrpc':'2.0','id':ident,'result':result}
+ return {'jsonrpc':'2.0','id':ident,'error':{'code':-32601,'message':'Method not found'}}
+
 class Handler(BaseHTTPRequestHandler):
+ def do_POST(self):
+  if urlparse(self.path).path!='/mcp':return self.reply(404,{'error':'Not found'})
+  try:
+   n=int(self.headers.get('Content-Length','0'))
+   if n>200000:raise ValueError('Request too large')
+   request=json.loads(self.rfile.read(n));result=mcp_result(request)
+   if result is None:self.send_response(202);self.end_headers();return
+   self.reply(200,result)
+  except Exception as e:self.reply(400,{'error':str(e)})
+
  def reply(self,status,obj):
   body=json.dumps(obj).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def do_GET(self):

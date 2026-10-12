@@ -26,4 +26,12 @@ class Handler(BaseHTTPRequestHandler):
    try:return self.reply(200,fetch(hall,meal,date))
    except Exception as e:return self.reply(502,{'error':str(e)})
   return self.reply(200,{'service':'Colby Food live menu probe','usage':'/api/menu?hall=roberts-dining-hall&meal=dinner&date=2026-10-12'})
-if __name__=='__main__':ThreadingHTTPServer(('0.0.0.0',int(os.environ.get('PORT','10000'))),Handler).serve_forever()
+if __name__=='__main__':
+ import threading
+ def startup_check():
+  try:
+   result=fetch('roberts-dining-hall','dinner','2026-10-12')
+   print('COLBY_API_TEST_SUCCESS',json.dumps({'url':result['source_url'],'keys':result['keys'],'day_count':len(result['days']),'first_day':str(result['days'][:1])[:1200]}),flush=True)
+  except Exception as e:print('COLBY_API_TEST_FAILURE',repr(e),flush=True)
+ threading.Thread(target=startup_check,daemon=True).start()
+ ThreadingHTTPServer(('0.0.0.0',int(os.environ.get('PORT','10000'))),Handler).serve_forever()

@@ -25,7 +25,10 @@ class Handler(BaseHTTPRequestHandler):
    q=parse_qs(p.query);hall=q.get('hall',['roberts-dining-hall'])[0];meal=q.get('meal',['dinner'])[0];date=q.get('date',['2026-10-12'])[0]
    try:return self.reply(200,fetch(hall,meal,date))
    except Exception as e:return self.reply(502,{'error':str(e)})
-  return self.reply(200,{'service':'Colby Food live menu probe','usage':'/api/menu?hall=roberts-dining-hall&meal=dinner&date=2026-10-12'})
+  if p.path=='/' or p.path=='/index.html':
+   with open('colby-bites.html','rb') as file: body=file.read()
+   self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
+  return self.reply(404,{'error':'Not found'})
 if __name__=='__main__':
  import threading
  def startup_check():
